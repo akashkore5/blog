@@ -1,0 +1,166 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Localizing Agri-tech: Building a Multilingual Next.js App for Rural India — KhetiSetu</title>
+<meta name="description" content="If you build an app for a farmer in Nashik or a trader in Haveri using standard English UI patterns, you’ve already lost. In the Indian agritech…">
+<link rel="canonical" href="https://khetisetu.com/blog/localizing-agri-tech-building-a-multilingual-next-js-app">
+<meta property="og:type" content="article"><meta property="og:title" content="Localizing Agri-tech: Building a Multilingual Next.js App for Rural India">
+<meta property="og:description" content="If you build an app for a farmer in Nashik or a trader in Haveri using standard English UI patterns, you’ve already lost. In the Indian agritech…"><meta property="og:url" content="https://khetisetu.com/blog/localizing-agri-tech-building-a-multilingual-next-js-app">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="keywords" content="">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Localizing Agri-tech: Building a Multilingual Next.js App for Rural India","description":"If you build an app for a farmer in Nashik or a trader in Haveri using standard English UI patterns, you’ve already lost. In the Indian agritech…","datePublished":"2026-11-18T15:27:24.746Z","author":{"@type":"Organization","name":"KhetiSetu"},"publisher":{"@type":"Organization","name":"KhetiSetu"},"mainEntityOfPage":"https://khetisetu.com/blog/localizing-agri-tech-building-a-multilingual-next-js-app"}</script>
+<style>
+:root{color-scheme:light dark}
+body{max-width:720px;margin:0 auto;padding:2.2rem 1.1rem;font:16px/1.7 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;background:#fff}
+@media(prefers-color-scheme:dark){body{color:#e6e6e6;background:#111}}
+h1{font-size:2rem;line-height:1.2;margin:.2em 0}h2{margin-top:1.8em}
+pre{background:#f4f4f5;padding:1rem;border-radius:8px;overflow:auto}
+@media(prefers-color-scheme:dark){pre{background:#1d1d1f}}
+code{font-family:ui-monospace,Menlo,monospace;font-size:.92em}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid #8884;padding:.4rem .6rem}
+a{color:#2563eb}.meta{color:#6b7280;font-size:.9rem;margin-bottom:1.5rem}
+img{max-width:100%}
+</style></head>
+<body>
+<article>
+<p class="meta">KhetiSetu · 2026-11-18</p>
+<h1>Localizing Agri-tech: Building a Multilingual Next.js App for Rural India</h1>
+<p>If you build an app for a farmer in Nashik or a trader in Haveri using standard English UI patterns, you’ve already lost. In the Indian agri-tech landscape, English isn&#39;t just a barrier; it’s a trust-killer. When we started building <a href="https://khetisetu.com">KhetiSetu</a>, we knew that supporting Hindi, Marathi, and Kannada wasn&#39;t a &quot;nice-to-have&quot; feature—it was the core product requirement.</p>
+<p>The challenge with multilingual apps in the Indian context isn&#39;t just swapping strings. It’s about handling varying script densities, managing &quot;Hinglish&quot; terminology that farmers actually use, and ensuring that a low-end Android device on a 3G connection doesn&#39;t choke on massive translation bundles.</p>
+<p>Here is how we architected our Next.js App Router to handle high-performance localization across three major Indian languages.</p>
+<h2>The Architecture: Middleware-based Routing</h2>
+<p>We opted for a sub-path routing strategy (e.g., <code>/hi/mandi</code>, <code>/kn/mandi</code>). This is superior to cookie-only localization because it allows farmers to share links via WhatsApp that preserve the language context. If a farmer in Karnataka shares a crop listing with a peer, the recipient should see it in Kannada immediately.</p>
+<p>In Next.js, we leverage the <code>middleware.ts</code> to intercept requests and redirect users based on their preferred language or geographic IP if no locale is present.</p>
+<pre><code class="language-typescript">// middleware.ts
+import { NextResponse } from &#39;next/server&#39;;
+import type { NextRequest } from &#39;next/server&#39;;
+import { match as matchLocale } from &#39;@formatjs/intl-localematcher&#39;;
+import Negotiator from &#39;negotiator&#39;;
+
+const locales = [&#39;en&#39;, &#39;hi&#39;, &#39;mr&#39;, &#39;kn&#39;];
+const defaultLocale = &#39;hi&#39;;
+
+function getLocale(request: NextRequest): string {
+  const negotiatorHeaders: Record&lt;string, string&gt; = {};
+  request.headers.forEach((value, key) =&gt; (negotiatorHeaders[key] = value));
+  
+  const languages = new Negotiator({ headers: negotiatorHeaders }).languages();
+  return matchLocale(languages, locales, defaultLocale);
+}
+
+export function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const pathnameIsMissingLocale = locales.every(
+    (locale) =&gt; !pathname.startsWith(`/${locale}/`) &amp;&amp; pathname !== `/${locale}`
+  );
+
+  if (pathnameIsMissingLocale) {
+    const locale = getLocale(request);
+    return NextResponse.redirect(
+      new URL(`/${locale}${pathname.startsWith(&#39;/&#39;) ? &#39;&#39; : &#39;/&#39;}${pathname}`, request.url)
+    );
+  }
+}
+
+export const config = {
+  matcher: [&#39;/((?!api|_next/static|_next/image|favicon.ico).*)&#39;],
+};
+</code></pre>
+<h2>Solving the &quot;Dictionary Debt&quot;</h2>
+<p>In a marketplace like <a href="https://khetisetu.com">KhetiSetu</a>, content is dynamic. We have static UI elements (buttons, labels) and dynamic data (crop names, variety names). </p>
+<p>For static UI, we use a dictionary pattern. Instead of a heavy library that loads everything on the client, we fetch only the necessary JSON on the server side using the <code>[locale]</code> layout segment.</p>
+<h3>The Directory Structure</h3>
+<pre><code class="language-text">app/
+  [locale]/
+    layout.tsx
+    page.tsx
+    mandi/
+      page.tsx
+dictionaries/
+  en.json
+  hi.json
+  mr.json
+  kn.json
+</code></pre>
+<p>We load these dictionaries using a simple asynchronous getter. This ensures that the Hindi translations aren&#39;t being sent to a user viewing the app in Kannada, keeping the payload small for users on spotty rural networks.</p>
+<table>
+<thead>
+<tr>
+<th align="left">Language</th>
+<th align="left">Script</th>
+<th align="left">Avg. Word Length (Relative)</th>
+<th align="left">Line Height Adjustment</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">English</td>
+<td align="left">Latin</td>
+<td align="left">1.0x</td>
+<td align="left">Standard</td>
+</tr>
+<tr>
+<td align="left">Hindi</td>
+<td align="left">Devanagari</td>
+<td align="left">1.2x</td>
+<td align="left">+15% for Matras</td>
+</tr>
+<tr>
+<td align="left">Marathi</td>
+<td align="left">Devanagari</td>
+<td align="left">1.2x</td>
+<td align="left">+15% for Matras</td>
+</tr>
+<tr>
+<td align="left">Kannada</td>
+<td align="left">Kannada</td>
+<td align="left">1.1x</td>
+<td align="left">+20% for Ottu-aksharas</td>
+</tr>
+</tbody></table>
+<h2>The &quot;Vernacular-First&quot; UI Challenge</h2>
+<p>One of the biggest mistakes engineers make is assuming that a <code>16px</code> font size works across all scripts. Devanagari (Hindi/Marathi) and Kannada scripts have complex &quot;matras&quot; (diacritics) and &quot;ottu-aksharas&quot; (stacked consonants). </p>
+<p>If you use a standard <code>line-height: 1.2</code>, the top and bottom of the Kannada characters will often get clipped on mobile browsers. We had to implement script-specific CSS variables to handle this.</p>
+<pre><code class="language-css">/* globals.css */
+:lang(hi), :lang(mr) {
+  --base-font-size: 17px;
+  --base-line-height: 1.6;
+}
+
+:lang(kn) {
+  --base-font-size: 16px;
+  --base-line-height: 1.8;
+}
+
+.body-text {
+  font-size: var(--base-font-size);
+  line-height: var(--base-line-height);
+}
+</code></pre>
+<p>Furthermore, &quot;Translation&quot; is often the wrong word. We focus on &quot;Transcreation.&quot; For example, the word &quot;Submit&quot; doesn&#39;t have a direct, natural-sounding equivalent in a rural context. In Hindi, we use &quot;आगे बढ़ें&quot; (Move forward) or &quot;जमा करें&quot; (Deposit/Submit), depending on the action. Using overly formal Sanskritized Hindi makes the app feel like a government form rather than a tool for the community.</p>
+<h2>Handling Dynamic Data and SEO</h2>
+<p>For an agri-tech marketplace, SEO is vital. If a farmer searches for &quot;सोयाबीन भाव&quot; (Soybean price) in Marathi, we need our Marathi-specific pages to rank. </p>
+<p>Next.js makes this easier with <code>generateMetadata</code>. We ensure that each page includes <code>hreflang</code> tags, telling Google that the <code>/hi/</code>, <code>/mr/</code>, and <code>/kn/</code> versions of a page are equivalents.</p>
+<pre><code class="language-typescript">export async function generateMetadata({ params: { locale } }) {
+  const baseUrl = &#39;https://khetisetu.com&#39;;
+  return {
+    alternates: {
+      canonical: `${baseUrl}/${locale}`,
+      languages: {
+        &#39;hi-IN&#39;: `${baseUrl}/hi`,
+        &#39;mr-IN&#39;: `${baseUrl}/mr`,
+        &#39;kn-IN&#39;: `${baseUrl}/kn`,
+      },
+    },
+  };
+}
+</code></pre>
+<h2>Performance: The 2-Second Rule</h2>
+<p>Farmers are often using $100-150 Android phones. These devices have limited CPU power to parse large JavaScript bundles. By using Next.js Server Components, we move the localization logic—the heavy lifting of mapping keys to strings—to the server.</p>
+<p>The client receives the final HTML with the correct Hindi or Kannada strings already rendered. There is no &quot;flash of un-localized text&quot; (FOUT) where the user sees &quot;SUBMIT_BUTTON&quot; for half a second before it turns into &quot;जमा करें&quot;.</p>
+<h2>Conclusion: Engineering for Trust</h2>
+<p>Building for the Indian agricultural sector requires a shift in mindset. You aren&#39;t just writing code; you&#39;re building a bridge across a digital divide. By utilizing Next.js&#39;s middleware and server-side rendering, we&#39;ve managed to provide a seamless experience for Hindi, Marathi, and Kannada speakers on <a href="https://khetisetu.com">KhetiSetu</a> without sacrificing performance.</p>
+<p>Localization in agri-tech isn&#39;t about translating words; it&#39;s about respecting the user&#39;s language enough to make the technology invisible. When a farmer sees their local Mandi prices in their own script, the barrier to entry vanishes. And in the world of Indian agriculture, that is the ultimate engineering goal.</p>
+
+</article>
+<hr style="margin:2.5rem 0;border:none;border-top:1px solid #8883">
+<p class="meta"><a href="/blog/">← more posts</a> · <a href="https://khetisetu.com">KhetiSetu</a></p>
+</body></html>
